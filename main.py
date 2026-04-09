@@ -12,9 +12,22 @@ from contextlib import asynccontextmanager
 from fastapi.responses import StreamingResponse
 from langgraph.checkpoint.memory import InMemorySaver
 import prompts
+from base_tools import live_web_search
 
-app = FastAPI()
 checkpointer = InMemorySaver()
+tools_list = None
+
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global tools_list
+    tools_list = [live_web_search]
+    print("Tools are loaded.. Ready to create the agent..") 
+    yield
+
+app = FastAPI(lifespan=lifespan)
+
 #Pydantic Data Model
 class ChatRequest(BaseModel):
     query: str = Field(..., min_length=2)
@@ -33,7 +46,7 @@ async def get_response_stream(query, model_name, thread_id):
     #Initialize Model and Agent
     system_prompt = prompts.CHAT_ASSISTANT_PROMPT
     model = ChatGoogleGenerativeAI(model = model_name)
-    agent = create_agent(model=model, system_prompt=system_prompt,checkpointer=checkpointer)
+    agent = create_agent(model=model, system_prompt=system_prompt,tools=tools_list,checkpointer=checkpointer)
     config = {'configurable':{'thread_id':thread_id}}
     async for chunk,metadata in agent.astream(
         {'messages':[HumanMessage(content=query)]},stream_mode='messages',config=config):
